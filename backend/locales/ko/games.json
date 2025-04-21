@@ -1,0 +1,8 @@
+{
+  "game.baccarat.name": "바카라",
+  "game.baccarat.description": "클래식 바카라 게임",
+  "game.blackjack.name": "블랙잭",
+  "game.blackjack.description": "21을 목표로 하는 카드 게임",
+  "game.roulette.name": "룰렛",
+  "game.roulette.description": "유럽식 룰렛 휠 게임"
+} 

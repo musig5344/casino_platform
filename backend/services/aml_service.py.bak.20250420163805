@@ -1,0 +1,865 @@
+from typing import Optional, Dict, Any, List, Tuple, Union
+from sqlalchemy.orm import Session
+from sqlalchemy.sql import select, and_, or_, func, text
+from fastapi import HTTPException, status
+from datetime import datetime, date, timedelta
+import json
+import uuid
+import logging
+import asyncio
+from decimal import Decimal
+import traceback
+
+from backend.models.aml import AMLAlert, AMLTransaction, AMLRiskProfile, AlertType, AlertStatus, AlertSeverity
+from backend.models.wallet import Transaction, Wallet
+from backend.models.user import Player
+from backend.schemas.aml import AMLAlertCreate, AlertStatusUpdate, ReportingJurisdiction
+from backend.utils.encryption import encryption_manager
+from backend.config.settings import get_settings
+
+logger = logging.getLogger(__name__)
+
+class AMLService:
+    """
+    AML(Anti-Money Laundering) 서비스 클래스
+    자금세탁방지 및 이상거래 탐지 관련 기능 제공
+    """
+    
+    def __init__(self, db: Session):
+        """
+        AML 서비스 초기화
+        
+        Args:
+            db: 데이터베이스 세션
+        """
+        self.db = db
+        self.settings = get_settings()
+        
+        # 관할별 규제 임계값 (Key: 관할, Value: 통화별 임계값)
+        self.jurisdiction_thresholds = {
+            ReportingJurisdiction.MALTA: {
+                "EUR": 2000.0,  # 유로화 기준 2,000 유로
+                "USD": 2200.0,  # 달러 기준 2,200 달러
+                "GBP": 1700.0,  # 파운드 기준 1,700 파운드
+                "DEFAULT": 2000.0  # 기본값
+            },
+            ReportingJurisdiction.PHILIPPINES: {
+                "PHP": 500000.0,  # 필리핀 페소 기준 500,000 페소
+                "USD": 10000.0,   # 달러 기준 10,000 달러
+                "DEFAULT": 10000.0 # 기본값 (USD 기준)
+            },
+            ReportingJurisdiction.CURACAO: {
+                "USD": 5000.0,   # 달러 기준 5,000 달러
+                "EUR": 4500.0,   # 유로화 기준 4,500 유로
+                "DEFAULT": 5000.0 # 기본값 (USD 기준)
+            },
+            "DEFAULT": {  # 기본 관할 (어떤 관할에도 해당하지 않을 경우)
+                "USD": 10000.0,   # 달러 기준 10,000 달러
+                "EUR": 9500.0,    # 유로화 기준 9,500 유로
+                "DEFAULT": 10000.0 # 기본값 (USD 기준)
+            }
+        }
+        
+        # 분석 모듈 버전
+        self.analysis_version = "1.0.0"
+    
+    async def analyze_transaction(self, transaction_id: str, user_id: str = None) -> AMLTransaction:
+        """
+        거래를 AML 관점에서 분석
+        
+        Args:
+            transaction_id: 분석할 거래 ID
+            user_id: 요청한 사용자 ID (선택)
+            
+        Returns:
+            AMLTransaction: 거래 분석 결과
+        """
+        try:
+            # 거래 정보 조회
+            transaction = self.db.query(Transaction).filter(
+                Transaction.transaction_id == transaction_id
+            ).first()
+            
+            if not transaction:
+                logging.error(f"분석을 위한 거래를 찾을 수 없음: {transaction_id}")
+                raise HTTPException(status_code=404, detail=f"Transaction not found: {transaction_id}")
+            
+            # 플레이어 정보 조회
+            player = self.db.query(Player).filter(Player.id == transaction.player_id).first()
+            if not player:
+                logging.error(f"플레이어를 찾을 수 없음: {transaction.player_id}")
+                raise HTTPException(status_code=404, detail=f"Player not found: {transaction.player_id}")
+            
+            # 관할 임계값 조회 (플레이어 국가 기준)
+            jurisdiction_thresholds = self.jurisdiction_thresholds.get(
+                player.country_code.upper(), self.jurisdiction_thresholds["DEFAULT"]
+            )
+            
+            # 플레이어 위험 프로필 조회
+            risk_profile = await self.get_or_create_player_risk_profile(player.id)
+            
+            # 현재 날짜
+            current_date = datetime.now()
+            
+            # 거래 유형에 따른 임계값 결정
+            transaction_type = transaction.transaction_type.lower()
+            threshold_key = f"{transaction_type}_threshold"
+            
+            if transaction_type not in ["deposit", "withdrawal"]:
+                # 입금/출금이 아닌 경우는 일단 보수적으로 낮은 임계값 적용
+                threshold_key = "deposit_threshold"
+            
+            threshold_amount = jurisdiction_thresholds.get(threshold_key, 3000)  # 기본값
+            threshold_currency = jurisdiction_thresholds.get("currency", "USD")
+            reporting_jurisdiction = player.country_code.upper() if player.country_code else "DEFAULT"
+            
+            # 거래 금액
+            transaction_amount = float(transaction.amount)
+            
+            # 위험 요소 및 분석 결과 초기화
+            risk_factors = []
+            is_large_transaction = False
+            is_unusual_for_player = False
+            is_structuring_attempt = False
+            is_regulatory_report_required = False
+            
+            # 임계값 초과 여부 확인
+            if transaction_amount >= threshold_amount:
+                is_large_transaction = True
+                is_regulatory_report_required = True
+                risk_factors.append({
+                    "factor": "large_transaction",
+                    "description": f"거래 금액 {transaction_amount}이(가) 임계값 {threshold_amount}을(를) 초과함",
+                    "weight": 0.75
+                })
+            
+            # 플레이어의 일반적인 패턴 대비 분석
+            avg_transaction_value = float(risk_profile.avg_transaction_amount or 0)
+            if avg_transaction_value > 0 and transaction_amount > (3 * avg_transaction_value):
+                is_unusual_for_player = True
+                risk_factors.append({
+                    "factor": "unusual_amount_for_player",
+                    "description": f"일반적인 거래 금액 {avg_transaction_value}보다 3배 이상 큰 거래",
+                    "weight": 0.5
+                })
+            
+            # 최근 거래 패턴 분석 (구조화 시도 감지)
+            # 지난 48시간 동안의 유사 거래 패턴 확인
+            recent_transactions = self.db.query(Transaction).filter(
+                Transaction.player_id == player.id,
+                Transaction.transaction_type == transaction.transaction_type,
+                Transaction.created_at > (current_date - timedelta(hours=48)),
+                Transaction.transaction_id != transaction_id
+            ).all()
+            
+            similar_transactions_count = 0
+            similar_transactions_total = 0
+            
+            for t in recent_transactions:
+                t_amount = float(t.amount)
+                # 임계값에 가까운 거래(임계값의 70~99%)들 카운트
+                if 0.7 * threshold_amount <= t_amount < threshold_amount:
+                    similar_transactions_count += 1
+                    similar_transactions_total += t_amount
+            
+            # 거래 수가 3개 이상이고 총합이 임계값을 초과하면 구조화 시도로 간주
+            if similar_transactions_count >= 3 and (similar_transactions_total + transaction_amount) > threshold_amount:
+                is_structuring_attempt = True
+                is_regulatory_report_required = True
+                risk_factors.append({
+                    "factor": "structuring_attempt",
+                    "description": f"지난 48시간 동안 {similar_transactions_count}개의 유사한 거래 발견 (총 {similar_transactions_total})",
+                    "weight": 0.85
+                })
+            
+            # 위험 점수 계산
+            risk_score = 0
+            
+            if len(risk_factors) > 0:
+                total_weight = sum(factor["weight"] for factor in risk_factors)
+                risk_score = (total_weight / len(risk_factors)) * 100
+            
+            # 기본 위험 점수 추가
+            if risk_profile and risk_profile.risk_score:
+                risk_score = (risk_score + float(risk_profile.risk_score)) / 2
+            
+            # 위험 점수 범위 조정 (0-100)
+            risk_score = min(max(risk_score, 0), 100)
+            
+            # AML 거래 분석 결과 생성
+            aml_transaction = AMLTransaction(
+                transaction_id=transaction_id,
+                player_id=player.id,
+                transaction_amount=transaction_amount,
+                transaction_currency=transaction.currency,
+                transaction_type=transaction_type,
+                is_large_transaction=is_large_transaction,
+                is_unusual_for_player=is_unusual_for_player,
+                is_structuring_attempt=is_structuring_attempt,
+                is_regulatory_report_required=is_regulatory_report_required,
+                regulatory_threshold_amount=threshold_amount,
+                regulatory_threshold_currency=threshold_currency,
+                reporting_jurisdiction=reporting_jurisdiction,
+                risk_factors=risk_factors,
+                risk_score=risk_score,
+                analyzed_at=current_date
+            )
+            
+            # 위험 프로필 업데이트
+            await self._update_risk_profile_from_transaction(aml_transaction)
+            
+            # 알림 생성 (필요한 경우)
+            alert = None
+            if is_large_transaction or is_structuring_attempt:
+                alert_severity = AlertSeverity.HIGH if is_structuring_attempt else AlertSeverity.MEDIUM
+                alert_type = None
+                
+                if is_structuring_attempt:
+                    alert_type = AlertType.THRESHOLD_AVOIDANCE
+                elif transaction_type == "deposit" and is_large_transaction:
+                    alert_type = AlertType.LARGE_DEPOSIT
+                elif transaction_type == "withdrawal" and is_large_transaction:
+                    alert_type = AlertType.LARGE_WITHDRAWAL
+                
+                alert = await self._create_alert_from_transaction(aml_transaction, alert_severity, alert_type)
+                logging.info(f"분석 결과로 알림 생성: {alert.id if alert else 'None'}")
+            else:
+                logging.info("분석 결과 알림이 필요하지 않음")
+            
+            # 분석 결과 저장
+            self.db.add(aml_transaction)
+            
+            # 커밋 전 변경사항 로깅
+            logging.info(f"AML 분석 커밋 직전 - 트랜잭션: {transaction_id}, 알림: {alert.id if alert else 'None'}")
+            self.db.commit()
+            logging.info(f"AML 분석 커밋 완료 - 트랜잭션: {transaction_id}, 알림: {alert.id if alert else 'None'}")
+            
+            try:
+                # 백그라운드 Kafka 전송 시도 - 비동기
+                asyncio.create_task(
+                    self._send_aml_result_to_kafka(aml_transaction)
+                )
+            except Exception as e:
+                logging.error(f"Kafka 전송 실패: {str(e)}")
+                # Kafka 전송은 중요하지만 실패해도 분석 결과 반환해야 함
+            
+            return aml_transaction
+            
+        except HTTPException:
+            # 이미 적절한 HTTP 예외면 그대로 전달
+            raise
+        except Exception as e:
+            logging.error(f"거래 분석 중 오류 발생: {str(e)}")
+            logging.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Error analyzing transaction: {str(e)}")
+    
+    def _get_threshold_for_player(self, player: Player) -> float:
+        """
+        플레이어별 거래 임계값 조회
+        
+        Args:
+            player: 플레이어 객체
+            
+        Returns:
+            float: 임계값
+        """
+        # 플레이어 국가 기반으로 관할 결정
+        jurisdiction = self._determine_reporting_jurisdiction(player)
+        
+        # 관할별 임계값 조회
+        jurisdiction_config = self.jurisdiction_thresholds.get(jurisdiction, self.jurisdiction_thresholds["DEFAULT"])
+        
+        # 플레이어 통화별 임계값 조회
+        currency = player.currency if player.currency else "DEFAULT"
+        threshold = jurisdiction_config.get(currency, jurisdiction_config["DEFAULT"])
+        
+        return threshold
+    
+    def _determine_reporting_jurisdiction(self, player: Player) -> str:
+        """
+        플레이어의 보고 관할 결정
+        
+        Args:
+            player: 플레이어 객체
+            
+        Returns:
+            str: 보고 관할
+        """
+        # 플레이어 국가 기반으로 관할 결정
+        country = player.country.upper() if player.country else "US"
+        
+        # 관할 매핑
+        if country == "MT":
+            return ReportingJurisdiction.MALTA
+        elif country == "PH":
+            return ReportingJurisdiction.PHILIPPINES
+        elif country in ["AW", "CW"]:  # 아루바, 퀴라소
+            return ReportingJurisdiction.CURACAO
+        
+        # 기본값
+        return "DEFAULT"
+    
+    def _get_or_create_risk_profile(self, player_id: str) -> AMLRiskProfile:
+        """
+        플레이어의 위험 프로필 조회 또는 생성
+        
+        Args:
+            player_id: 플레이어 ID
+            
+        Returns:
+            AMLRiskProfile: 플레이어의 위험 프로필
+        """
+        # 기존 프로필 조회
+        profile = self.db.query(AMLRiskProfile).filter(AMLRiskProfile.player_id == player_id).first()
+        
+        # 없으면 생성
+        if not profile:
+            profile = AMLRiskProfile(
+                player_id=player_id,
+                overall_risk_score=50.0,  # 초기 위험 점수 (중간)
+                deposit_risk_score=50.0,
+                withdrawal_risk_score=50.0,
+                gameplay_risk_score=50.0,
+                is_active=True,
+                created_at=datetime.now(),
+                last_assessment_at=datetime.now()
+            )
+            self.db.add(profile)
+            self.db.flush()
+        
+        return profile
+    
+    async def _check_unusual_pattern(self, transaction: Transaction, risk_profile: AMLRiskProfile) -> Tuple[float, bool]:
+        """
+        비정상적인 거래 패턴 확인
+        
+        Args:
+            transaction: 거래 객체
+            risk_profile: 위험 프로필
+            
+        Returns:
+            Tuple[float, bool]: (위험 점수, 비정상 여부)
+        """
+        transaction_type = transaction.transaction_type
+        amount = float(transaction.amount)
+        risk_score = 0.0
+        is_unusual = False
+        
+        # 1. 플레이어의 평균 거래 금액 대비 확인
+        avg_amount = await self._get_player_average_transaction_amount(transaction.player_id, transaction_type)
+        
+        if avg_amount and amount > avg_amount * 3:
+            risk_score += 25.0
+            is_unusual = True
+            
+        # 2. 최근 거래 패턴 확인
+        recent_transactions = await self._get_recent_transactions(transaction.player_id, transaction_type, limit=5)
+        
+        if recent_transactions:
+            # 갑작스러운 큰 금액의 거래 확인
+            recent_max = max([float(tx.amount) for tx in recent_transactions])
+            recent_avg = sum([float(tx.amount) for tx in recent_transactions]) / len(recent_transactions)
+            
+            if amount > recent_max * 2 and amount > recent_avg * 3:
+                risk_score += 20.0
+                is_unusual = True
+                
+            # 시간대 이상 확인 (새벽 시간대 등)
+            current_hour = transaction.created_at.hour
+            if 1 <= current_hour <= 5:  # 새벽 1시~5시
+                risk_score += 10.0
+        
+        # 3. 총 위험 점수 조정
+        risk_score = min(60.0, risk_score)  # 최대 60점으로 제한
+        
+        return risk_score, is_unusual
+    
+    async def _check_structuring(self, transaction: Transaction, player: Player) -> Tuple[float, bool]:
+        """
+        구조화(Structuring) 시도 확인 - 임계값 우회를 위한 소액 분할 거래
+        
+        Args:
+            transaction: 거래 객체
+            player: 플레이어 객체
+            
+        Returns:
+            Tuple[float, bool]: (위험 점수, 구조화 시도 여부)
+        """
+        # 임계값 조회
+        threshold = self._get_threshold_for_player(player)
+        transaction_type = transaction.transaction_type
+        risk_score = 0.0
+        is_structuring = False
+        
+        # 1. 24시간 이내 동일 유형의 거래 수와 총액 확인
+        start_time = transaction.created_at - timedelta(hours=24)
+        
+        daily_transactions = self.db.query(Transaction).filter(
+            Transaction.player_id == transaction.player_id,
+            Transaction.transaction_type == transaction_type,
+            Transaction.created_at >= start_time,
+            Transaction.created_at <= transaction.created_at,
+            Transaction.transaction_id != transaction.transaction_id  # 현재 거래 제외
+        ).all()
+        
+        if daily_transactions:
+            # 24시간 내 거래 수 확인
+            if len(daily_transactions) >= 3:
+                risk_score += 15.0
+                
+            # 총액 확인
+            daily_total = sum([float(tx.amount) for tx in daily_transactions]) + float(transaction.amount)
+            
+            # 총액이 임계값 근처인데 분할 거래로 보이는 경우
+            if daily_total >= threshold * 0.8 and daily_total < threshold * 1.1:
+                risk_score += 35.0
+                is_structuring = True
+                
+            # 임계값보다 약간 적은 여러 건의 거래가 있는 경우
+            threshold_avoidance = [tx for tx in daily_transactions if float(tx.amount) >= threshold * 0.7 and float(tx.amount) < threshold]
+            if len(threshold_avoidance) >= 2 or (len(threshold_avoidance) >= 1 and float(transaction.amount) >= threshold * 0.7 and float(transaction.amount) < threshold):
+                risk_score += 40.0
+                is_structuring = True
+        
+        # 2. 48시간 이내 구조화 패턴 확인
+        if not is_structuring:
+            start_time_48h = transaction.created_at - timedelta(hours=48)
+            transactions_48h = self.db.query(Transaction).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == transaction_type,
+                Transaction.created_at >= start_time_48h,
+                Transaction.created_at <= transaction.created_at,
+                Transaction.transaction_id != transaction.transaction_id  # 현재 거래 제외
+            ).all()
+            
+            if transactions_48h:
+                # 같은 금액대의 거래가 반복되는 경우
+                amount_clusters = {}
+                for tx in transactions_48h:
+                    # 금액을 10% 단위로 클러스터링
+                    cluster_key = int(float(tx.amount) / (threshold * 0.1))
+                    amount_clusters[cluster_key] = amount_clusters.get(cluster_key, 0) + 1
+                
+                # 특정 금액대에 집중된 거래가 있는 경우
+                for cluster, count in amount_clusters.items():
+                    if count >= 3:
+                        risk_score += 25.0
+                        is_structuring = True
+                        break
+        
+        # 3. 총 위험 점수 조정
+        risk_score = min(70.0, risk_score)  # 최대 70점으로 제한
+        
+        return risk_score, is_structuring
+    
+    async def _get_player_average_transaction_amount(self, player_id: str, transaction_type: str) -> Optional[float]:
+        """
+        플레이어의 평균 거래 금액 조회
+        
+        Args:
+            player_id: 플레이어 ID
+            transaction_type: 거래 유형
+            
+        Returns:
+            Optional[float]: 평균 거래 금액 또는 None
+        """
+        # 최근 30일 내 동일 유형의 거래 평균 조회
+        start_time = datetime.now() - timedelta(days=30)
+        
+        result = self.db.query(func.avg(Transaction.amount)).filter(
+            Transaction.player_id == player_id,
+            Transaction.transaction_type == transaction_type,
+            Transaction.created_at >= start_time
+        ).scalar()
+        
+        return float(result) if result else None
+    
+    async def _get_recent_transactions(self, player_id: str, transaction_type: str, limit: int = 5) -> List[Transaction]:
+        """
+        최근 거래 내역 조회
+        
+        Args:
+            player_id: 플레이어 ID
+            transaction_type: 거래 유형
+            limit: 최대 조회 수
+            
+        Returns:
+            List[Transaction]: 최근 거래 목록
+        """
+        recent_transactions = self.db.query(Transaction).filter(
+            Transaction.player_id == player_id,
+            Transaction.transaction_type == transaction_type
+        ).order_by(Transaction.created_at.desc()).limit(limit).all()
+        
+        return recent_transactions
+    
+    async def _create_alert_from_transaction(self, aml_transaction: AMLTransaction, severity: AlertSeverity, 
+                                  predefined_alert_type: AlertType = None) -> AMLAlert:
+        """
+        거래 분석 결과로부터 알림 생성
+        
+        Args:
+            aml_transaction: AML 거래 분석 결과
+            severity: 알림 심각도
+            predefined_alert_type: 미리 정의된 알림 유형 (없으면 자동 결정)
+            
+        Returns:
+            AMLAlert: 생성된 알림
+        """
+        try:
+            # 트랜잭션 조회
+            transaction = self.db.query(Transaction).filter(
+                Transaction.transaction_id == aml_transaction.transaction_id
+            ).first()
+            
+            if not transaction:
+                logging.error(f"트랜잭션을 찾을 수 없음: {aml_transaction.transaction_id}")
+                return None
+            
+            # 알림 유형 결정 (미리 정의된 알림 유형이 있으면 그것을 사용)
+            if predefined_alert_type:
+                alert_type = predefined_alert_type
+                if alert_type == AlertType.LARGE_DEPOSIT:
+                    description = "대규모 입금 거래가 감지되었습니다"
+                    detection_rule = "large_deposit"
+                elif alert_type == AlertType.LARGE_WITHDRAWAL:
+                    description = "대규모 출금 거래가 감지되었습니다"
+                    detection_rule = "large_withdrawal"
+                elif alert_type == AlertType.THRESHOLD_AVOIDANCE:
+                    description = "임계값 회피를 위한 구조화 거래가 의심됩니다"
+                    detection_rule = "structuring_attempt"
+                else:
+                    description = "의심스러운 거래 패턴이 감지되었습니다"
+                    detection_rule = f"suspicious_{transaction.transaction_type}_pattern"
+            else:
+                # 기본 알림 유형 결정 로직
+                alert_type = AlertType.UNUSUAL_PATTERN
+                description = "비정상적인 거래 패턴이 감지되었습니다"
+                detection_rule = "unusual_transaction_pattern"
+                
+                if aml_transaction.is_large_transaction:
+                    alert_type = AlertType.LARGE_DEPOSIT if transaction.transaction_type == "deposit" else AlertType.LARGE_WITHDRAWAL
+                    description = f"대규모 {'입금' if transaction.transaction_type == 'deposit' else '출금'} 거래가 감지되었습니다"
+                    detection_rule = f"large_{transaction.transaction_type}"
+                    
+                elif aml_transaction.is_structuring_attempt:
+                    alert_type = AlertType.THRESHOLD_AVOIDANCE
+                    description = "임계값 회피를 위한 구조화 거래가 의심됩니다"
+                    detection_rule = "structuring_attempt"
+            
+            # 알림 생성
+            alert = AMLAlert(
+                player_id=aml_transaction.player_id,
+                alert_type=alert_type,
+                alert_severity=severity,
+                alert_status=AlertStatus.NEW,
+                description=description,
+                detection_rule=detection_rule,
+                transaction_ids=[aml_transaction.transaction_id],
+                transaction_details={
+                    "transaction_type": transaction.transaction_type,
+                    "amount": str(transaction.amount),
+                    "created_at": transaction.created_at.isoformat(),
+                    "analysis": {
+                        "is_large_transaction": aml_transaction.is_large_transaction,
+                        "is_unusual_for_player": aml_transaction.is_unusual_for_player,
+                        "is_structuring_attempt": aml_transaction.is_structuring_attempt,
+                        "is_regulatory_report_required": aml_transaction.is_regulatory_report_required
+                    }
+                },
+                risk_score=aml_transaction.risk_score,
+                alert_data={
+                    "risk_factors": aml_transaction.risk_factors,
+                    "threshold": {
+                        "currency": aml_transaction.regulatory_threshold_currency,
+                        "amount": aml_transaction.regulatory_threshold_amount,
+                        "jurisdiction": aml_transaction.reporting_jurisdiction
+                    }
+                }
+            )
+            
+            self.db.add(alert)
+            self.db.flush()  # 알림 객체가 데이터베이스에 즉시 반영되도록 flush 호출
+            logging.info(f"알림 생성 성공: ID={alert.id}, 유형={alert_type}, 심각도={severity}")
+            return alert
+            
+        except Exception as e:
+            logging.error(f"알림 생성 중 오류 발생: {str(e)}")
+            logging.error(traceback.format_exc())
+            # 오류가 발생해도 분석 과정 자체는 계속 진행되도록 None 반환
+            return None
+    
+    async def _update_risk_profile_from_transaction(self, transaction: Transaction, risk_profile: AMLRiskProfile, transaction_risk_score: float) -> None:
+        """
+        거래 기반으로 위험 프로필 업데이트
+        
+        Args:
+            transaction: 거래 객체
+            risk_profile: 위험 프로필
+            transaction_risk_score: 거래 위험 점수
+        """
+        transaction_type = transaction.transaction_type
+        amount = float(transaction.amount)
+        
+        # 1. 마지막 거래 시간 업데이트
+        if transaction_type == "deposit":
+            risk_profile.last_deposit_at = transaction.created_at
+        elif transaction_type == "withdrawal":
+            risk_profile.last_withdrawal_at = transaction.created_at
+        elif transaction_type in ["bet", "win"]:
+            risk_profile.last_played_at = transaction.created_at
+        
+        # 2. 최근 7일/30일 통계 업데이트
+        now = datetime.now()
+        days_7_ago = now - timedelta(days=7)
+        days_30_ago = now - timedelta(days=30)
+        
+        # 7일 내 거래 통계
+        if transaction_type == "deposit":
+            deposit_count_7d = self.db.query(func.count(Transaction.id)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "deposit",
+                Transaction.created_at >= days_7_ago
+            ).scalar()
+            
+            deposit_amount_7d = self.db.query(func.sum(Transaction.amount)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "deposit",
+                Transaction.created_at >= days_7_ago
+            ).scalar()
+            
+            risk_profile.deposit_count_7d = deposit_count_7d or 0
+            risk_profile.deposit_amount_7d = float(deposit_amount_7d) if deposit_amount_7d else 0.0
+            
+        elif transaction_type == "withdrawal":
+            withdrawal_count_7d = self.db.query(func.count(Transaction.id)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "withdrawal",
+                Transaction.created_at >= days_7_ago
+            ).scalar()
+            
+            withdrawal_amount_7d = self.db.query(func.sum(Transaction.amount)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "withdrawal",
+                Transaction.created_at >= days_7_ago
+            ).scalar()
+            
+            risk_profile.withdrawal_count_7d = withdrawal_count_7d or 0
+            risk_profile.withdrawal_amount_7d = float(withdrawal_amount_7d) if withdrawal_amount_7d else 0.0
+        
+        # 30일 내 거래 통계
+        if transaction_type == "deposit":
+            deposit_count_30d = self.db.query(func.count(Transaction.id)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "deposit",
+                Transaction.created_at >= days_30_ago
+            ).scalar()
+            
+            deposit_amount_30d = self.db.query(func.sum(Transaction.amount)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "deposit",
+                Transaction.created_at >= days_30_ago
+            ).scalar()
+            
+            risk_profile.deposit_count_30d = deposit_count_30d or 0
+            risk_profile.deposit_amount_30d = float(deposit_amount_30d) if deposit_amount_30d else 0.0
+            
+        elif transaction_type == "withdrawal":
+            withdrawal_count_30d = self.db.query(func.count(Transaction.id)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "withdrawal",
+                Transaction.created_at >= days_30_ago
+            ).scalar()
+            
+            withdrawal_amount_30d = self.db.query(func.sum(Transaction.amount)).filter(
+                Transaction.player_id == transaction.player_id,
+                Transaction.transaction_type == "withdrawal",
+                Transaction.created_at >= days_30_ago
+            ).scalar()
+            
+            risk_profile.withdrawal_count_30d = withdrawal_count_30d or 0
+            risk_profile.withdrawal_amount_30d = float(withdrawal_amount_30d) if withdrawal_amount_30d else 0.0
+        
+        # 3. 비율 계산
+        # 베팅 대 입금 비율
+        total_bet = self.db.query(func.sum(Transaction.amount)).filter(
+            Transaction.player_id == transaction.player_id,
+            Transaction.transaction_type == "bet",
+            Transaction.created_at >= days_30_ago
+        ).scalar()
+        
+        total_deposit = self.db.query(func.sum(Transaction.amount)).filter(
+            Transaction.player_id == transaction.player_id,
+            Transaction.transaction_type == "deposit",
+            Transaction.created_at >= days_30_ago
+        ).scalar()
+        
+        if total_deposit and float(total_deposit) > 0:
+            risk_profile.wager_to_deposit_ratio = float(total_bet) / float(total_deposit) if total_bet else 0.0
+        
+        # 출금 대 입금 비율
+        total_withdrawal = self.db.query(func.sum(Transaction.amount)).filter(
+            Transaction.player_id == transaction.player_id,
+            Transaction.transaction_type == "withdrawal",
+            Transaction.created_at >= days_30_ago
+        ).scalar()
+        
+        if total_deposit and float(total_deposit) > 0:
+            risk_profile.withdrawal_to_deposit_ratio = float(total_withdrawal) / float(total_deposit) if total_withdrawal else 0.0
+        
+        # 4. 위험 점수 업데이트
+        # 거래 유형별 위험 점수 업데이트
+        if transaction_type == "deposit":
+            # 기존 점수와 새로운 위험 점수를 가중 평균으로 계산
+            risk_profile.deposit_risk_score = risk_profile.deposit_risk_score * 0.8 + transaction_risk_score * 0.2
+        elif transaction_type == "withdrawal":
+            risk_profile.withdrawal_risk_score = risk_profile.withdrawal_risk_score * 0.8 + transaction_risk_score * 0.2
+        elif transaction_type in ["bet", "win"]:
+            risk_profile.gameplay_risk_score = risk_profile.gameplay_risk_score * 0.8 + transaction_risk_score * 0.2
+        
+        # 전체 위험 점수 업데이트
+        risk_profile.overall_risk_score = (
+            risk_profile.deposit_risk_score * 0.4 +
+            risk_profile.withdrawal_risk_score * 0.4 +
+            risk_profile.gameplay_risk_score * 0.2
+        )
+        
+        # 마지막 평가 시간 업데이트
+        risk_profile.last_assessment_at = now
+        
+        # 5. 위험 요소 업데이트
+        risk_factors = risk_profile.risk_factors or {}
+        
+        # 낮은 베팅 대 입금 비율 (자금세탁 위험 지표)
+        if risk_profile.wager_to_deposit_ratio is not None and risk_profile.wager_to_deposit_ratio < 0.3:
+            risk_factors["low_wagering"] = {
+                "current_ratio": risk_profile.wager_to_deposit_ratio,
+                "updated_at": now.isoformat()
+            }
+        
+        # 구조화 시도
+        if transaction_risk_score >= 50 and transaction.transaction_type in ["deposit", "withdrawal"]:
+            risk_factors["high_risk_transaction"] = {
+                "transaction_id": transaction.transaction_id,
+                "risk_score": transaction_risk_score,
+                "updated_at": now.isoformat()
+            }
+        
+        risk_profile.risk_factors = risk_factors
+    
+    async def create_alert(self, alert_data: AMLAlertCreate) -> AMLAlert:
+        """
+        AML 알림 수동 생성
+        
+        Args:
+            alert_data: 알림 생성 데이터
+            
+        Returns:
+            AMLAlert: 생성된 알림
+        """
+        # 플레이어 존재 확인
+        player = self.db.query(Player).filter(Player.id == alert_data.player_id).first()
+        if not player:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"플레이어 ID {alert_data.player_id}를 찾을 수 없습니다"
+            )
+        
+        # 알림 생성
+        alert = AMLAlert(
+            player_id=alert_data.player_id,
+            alert_type=alert_data.alert_type,
+            alert_severity=alert_data.alert_severity,
+            alert_status=AlertStatus.NEW,
+            description=alert_data.description,
+            detection_rule=alert_data.detection_rule,
+            transaction_ids=alert_data.transaction_ids,
+            transaction_details=alert_data.transaction_details,
+            alert_data=alert_data.alert_data,
+            risk_score=alert_data.risk_score
+        )
+        
+        self.db.add(alert)
+        self.db.commit()
+        self.db.refresh(alert)
+        
+        return alert
+    
+    def update_alert_status(self, update_data: AlertStatusUpdate) -> AMLAlert:
+        """
+        알림 상태 업데이트
+        
+        Args:
+            update_data: 업데이트 데이터
+            
+        Returns:
+            AMLAlert: 업데이트된 알림
+        """
+        # 알림 조회
+        alert = self.db.query(AMLAlert).filter(AMLAlert.id == update_data.alert_id).first()
+        if not alert:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"알림 ID {update_data.alert_id}를 찾을 수 없습니다"
+            )
+        
+        # 상태 업데이트
+        alert.alert_status = update_data.status
+        
+        # 검토 정보 업데이트
+        if update_data.review_notes:
+            alert.review_notes = update_data.review_notes
+            
+        if update_data.reviewed_by:
+            alert.reviewed_by = update_data.reviewed_by
+            
+        # 검토 시간 업데이트
+        if update_data.status != alert.alert_status:
+            alert.reviewed_at = datetime.now()
+            
+        # 보고된 경우 보고 시간 및 참조 업데이트
+        if update_data.status == AlertStatus.REPORTED:
+            alert.reported_at = datetime.now()
+            if update_data.report_reference:
+                alert.report_reference = update_data.report_reference
+        
+        self.db.commit()
+        self.db.refresh(alert)
+        
+        return alert
+    
+    def get_player_alerts(self, player_id: str, limit: int = 50, offset: int = 0) -> List[AMLAlert]:
+        """
+        플레이어 알림 조회
+        
+        Args:
+            player_id: 플레이어 ID
+            limit: 최대 조회 수
+            offset: 조회 시작 위치
+            
+        Returns:
+            List[AMLAlert]: 알림 목록
+        """
+        alerts = self.db.query(AMLAlert).filter(
+            AMLAlert.player_id == player_id
+        ).order_by(AMLAlert.created_at.desc()).offset(offset).limit(limit).all()
+        
+        return alerts
+    
+    def get_high_risk_players(self, limit: int = 50, offset: int = 0) -> List[AMLRiskProfile]:
+        """
+        고위험 플레이어 조회
+        
+        Args:
+            limit: 최대 조회 수
+            offset: 조회 시작 위치
+            
+        Returns:
+            List[AMLRiskProfile]: 고위험 플레이어 목록
+        """
+        high_risk_profiles = self.db.query(AMLRiskProfile).filter(
+            AMLRiskProfile.overall_risk_score >= 70.0,
+            AMLRiskProfile.is_active == True
+        ).order_by(AMLRiskProfile.overall_risk_score.desc()).offset(offset).limit(limit).all()
+        
+        return high_risk_profiles 

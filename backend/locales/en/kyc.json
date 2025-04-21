@@ -1,0 +1,14 @@
+{
+  "messages.submission_successful": "KYC verification request submitted successfully. Please wait for administrator review.",
+  "messages.no_reason_provided": "No reason provided.",
+  "messages.status_updated": "KYC verification status updated to '{status}'.",
+
+  "status.pending.name": "Pending",
+  "status.pending.message": "KYC verification is in progress. Waiting for administrator review.",
+  "status.approved.name": "Approved",
+  "status.approved.message": "KYC verification has been approved.",
+  "status.rejected.name": "Rejected",
+  "status.rejected.message": "KYC verification has been rejected. Reason: {reason}",
+  "status.expired.name": "Expired",
+  "status.expired.message": "KYC verification has expired. Please resubmit."
+} 

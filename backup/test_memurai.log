@@ -1,0 +1,77 @@
+2025-04-19 18:27:56,509 - INFO - Redis/Memurai 연결 성공
+2025-04-19 18:27:56,519 - INFO - Checking cache service status
+2025-04-19 18:27:56,543 - INFO - Memurai service is running
+2025-04-19 18:27:56,545 - INFO - Requesting auth token from http://localhost:8000/ua/v1/MY_CASINO/qwqw6171 with payload: {"player": {"id": "test124", "firstName": "Test", "lastName": "User", "country": "KR", "currency": "KRW", "session": {"id": "session123", "ip": "192.168.0.1"}}, "uuid": "test_uuid_1745054876"}
+2025-04-19 18:27:58,593 - INFO - Successfully obtained token: test_token_c56ebf8b-...
+2025-04-19 18:27:58,594 - INFO - Testing successful authentication
+2025-04-19 18:27:58,596 - INFO - Testing authentication failure with invalid casino key
+2025-04-19 18:28:00,637 - INFO - Authentication failure test passed with status 401
+2025-04-19 18:28:00,639 - INFO - Starting balance API caching test
+2025-04-19 18:28:00,663 - INFO - No cache data for key wallet:player123
+2025-04-19 18:28:02,729 - INFO - Cache data for key wallet:player123: {'balance': 10000.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:28:02.705975'}
+2025-04-19 18:28:04,850 - INFO - Starting balance API after debit test
+2025-04-19 18:28:08,987 - INFO - Cache data for key wallet:player123: {'balance': 5000.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:28:08.963665'}
+2025-04-19 18:28:11,025 - INFO - Balance API after debit test passed
+2025-04-19 18:28:11,027 - INFO - Starting concurrent debit test
+2025-04-19 18:28:17,166 - INFO - Concurrent debit test passed: 5 successful debits
+2025-04-19 18:28:17,168 - INFO - Starting cache TTL test
+2025-04-19 18:28:19,213 - INFO - Waiting 61 seconds for TTL expiration...
+2025-04-19 18:29:04,065 - INFO - Redis/Memurai 연결 성공
+2025-04-19 18:29:04,075 - INFO - Checking cache service status
+2025-04-19 18:29:04,101 - INFO - Memurai service is running
+2025-04-19 18:29:04,103 - INFO - Requesting auth token from http://localhost:8000/ua/v1/MY_CASINO/qwqw6171 with payload: {"player": {"id": "test124", "firstName": "Test", "lastName": "User", "country": "KR", "currency": "KRW", "session": {"id": "session123", "ip": "192.168.0.1"}}, "uuid": "test_uuid_1745054944"}
+2025-04-19 18:29:06,156 - INFO - Successfully obtained token: test_token_685a7e1d-...
+2025-04-19 18:29:06,156 - INFO - Testing successful authentication
+2025-04-19 18:29:06,158 - INFO - Testing authentication failure with invalid casino key
+2025-04-19 18:29:08,188 - INFO - Authentication failure test passed with status 401
+2025-04-19 18:29:08,189 - INFO - Starting balance API caching test
+2025-04-19 18:29:08,215 - INFO - Cache data for key wallet:player123: {'balance': 4975.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:28:15.131562'}
+2025-04-19 18:29:08,293 - INFO - Starting balance API after debit test
+2025-04-19 18:29:12,411 - INFO - Cache data for key wallet:player123: {'balance': 2487.5, 'currency': 'KRW', 'updated_at': '2025-04-19T18:29:12.386942'}
+2025-04-19 18:29:14,466 - INFO - Balance API after debit test passed
+2025-04-19 18:29:14,467 - INFO - Starting concurrent debit test
+2025-04-19 18:29:20,608 - INFO - Concurrent debit test passed: 5 successful debits
+2025-04-19 18:29:20,610 - INFO - Starting cache TTL test
+2025-04-19 18:29:22,652 - INFO - Waiting 61 seconds for TTL expiration...
+2025-04-19 18:33:07,970 - INFO - Redis/Memurai 연결 성공
+2025-04-19 18:33:07,981 - INFO - Checking cache service status
+2025-04-19 18:33:08,011 - INFO - Memurai service is running
+2025-04-19 18:33:08,013 - INFO - Requesting auth token from http://localhost:8000/ua/v1/MY_CASINO/qwqw6171 with payload: {"player": {"id": "test124", "firstName": "Test", "lastName": "User", "country": "KR", "currency": "KRW", "session": {"id": "session123", "ip": "192.168.0.1"}}, "uuid": "test_uuid_1745055188"}
+2025-04-19 18:33:10,064 - INFO - Successfully obtained token: test_token_36e9c8a4-...
+2025-04-19 18:33:10,065 - INFO - Testing successful authentication
+2025-04-19 18:33:10,067 - INFO - Testing authentication failure with invalid casino key
+2025-04-19 18:33:12,097 - INFO - Authentication failure test passed with status 401
+2025-04-19 18:33:12,099 - INFO - Starting balance API caching test
+2025-04-19 18:33:12,147 - INFO - No cache data for key wallet:player123
+2025-04-19 18:33:14,210 - INFO - Cache data for key wallet:player123: {'balance': 10000.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:33:14.187794'}
+2025-04-19 18:33:16,329 - INFO - Starting balance API after debit test
+2025-04-19 18:33:20,438 - INFO - Cache data for key wallet:player123: {'balance': 5000.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:33:20.414594'}
+2025-04-19 18:33:22,492 - INFO - Balance API after debit test passed
+2025-04-19 18:33:22,494 - INFO - Starting concurrent debit test
+2025-04-19 18:33:28,628 - INFO - Concurrent debit test passed: 5 successful debits
+2025-04-19 18:33:28,630 - INFO - Starting cache TTL test
+2025-04-19 18:33:30,678 - INFO - Waiting 5 seconds for TTL expiration...
+2025-04-19 18:33:37,734 - INFO - Cache TTL test passed
+2025-04-19 18:33:37,736 - INFO - Starting error cases test
+2025-04-19 18:34:58,128 - INFO - Redis/Memurai 연결 성공
+2025-04-19 18:34:58,138 - INFO - Checking cache service status
+2025-04-19 18:34:58,162 - INFO - Memurai service is running
+2025-04-19 18:34:58,163 - INFO - Requesting auth token from http://localhost:8000/ua/v1/MY_CASINO/qwqw6171 with payload: {"player": {"id": "test124", "firstName": "Test", "lastName": "User", "country": "KR", "currency": "KRW", "session": {"id": "session123", "ip": "192.168.0.1"}}, "uuid": "test_uuid_1745055298"}
+2025-04-19 18:35:00,200 - INFO - Successfully obtained token: test_token_59451102-...
+2025-04-19 18:35:00,201 - INFO - Testing successful authentication
+2025-04-19 18:35:00,202 - INFO - Testing authentication failure with invalid casino key
+2025-04-19 18:35:02,247 - INFO - Authentication failure test passed with status 401
+2025-04-19 18:35:02,249 - INFO - Starting balance API caching test
+2025-04-19 18:35:02,273 - INFO - No cache data for key wallet:player123
+2025-04-19 18:35:04,334 - INFO - Cache data for key wallet:player123: {'balance': 10000.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:35:04.310985'}
+2025-04-19 18:35:06,375 - INFO - Balance API caching test passed: First response time 2037.45ms, Second 2040.11ms
+2025-04-19 18:35:06,378 - INFO - Starting balance API after debit test
+2025-04-19 18:35:10,470 - INFO - Cache data for key wallet:player123: {'balance': 5000.0, 'currency': 'KRW', 'updated_at': '2025-04-19T18:35:10.444415'}
+2025-04-19 18:35:12,515 - INFO - Balance API after debit test passed
+2025-04-19 18:35:12,518 - INFO - Starting concurrent debit test
+2025-04-19 18:35:18,640 - INFO - Concurrent debit test passed: 5 successful debits
+2025-04-19 18:35:18,642 - INFO - Starting cache TTL test
+2025-04-19 18:35:20,671 - INFO - Waiting 5 seconds for TTL expiration...
+2025-04-19 18:35:27,715 - INFO - Cache TTL test passed
+2025-04-19 18:35:27,716 - INFO - Starting error cases test
+2025-04-19 18:35:35,877 - INFO - Error cases test passed

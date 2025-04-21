@@ -1,0 +1,23 @@
+{
+  "error.player_not_found": "Player '{player_id}' not found.",
+  "error.user_not_found": "User not found.",
+  "error.game_not_found": "Game '{game_id}' not found.",
+  "error.unsupported_game_provider": "Unsupported game provider.",
+  "error.internal_server_error": "An internal server error occurred. Please try again later.",
+  "error.player_already_exists": "Player ID '{player_id}' already exists.",
+  "error.player_id_mismatch": "Player ID mismatch between token and request.",
+  "error.validation_error": "Validation error. Please check your input.",
+  "error.insufficient_funds": "Insufficient funds.",
+  "error.transaction_not_found": "Transaction '{transaction_id}' not found.",
+  "error.transaction_already_processed": "Transaction '{transaction_id}' has already been processed or canceled.",
+  "error.invalid_credentials": "Could not validate credentials.",
+  "error.forbidden_access": "Forbidden access.",
+  "error.authorization_failed": "You do not have permission to perform this action.",
+  "error.invalid_bet_amount": "Invalid bet amount.",
+  "error.kyc_not_found": "KYC verification information not found.",
+  "error.kyc_id_not_found": "KYC ID '{kyc_id}' not found.",
+  "error.kyc_not_pending": "No pending KYC verification found or document submission is not allowed in the current status.",
+  "error.upload_url_generation_failed": "Failed to generate document upload URL.",
+  "error.gdpr_request_failed": "Failed to process GDPR request.",
+  "error.no_bet_placed": "No bet placed. Please place a bet."
+} 

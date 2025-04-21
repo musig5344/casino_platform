@@ -1,0 +1,14 @@
+{
+  "messages.submission_successful": "KYC 검증 요청이 성공적으로 제출되었습니다. 관리자 검토를 기다리세요.",
+  "messages.no_reason_provided": "사유가 제공되지 않았습니다.",
+  "messages.status_updated": "KYC 검증 상태가 '{status}'(으)로 업데이트되었습니다.",
+
+  "status.pending.name": "검토 중",
+  "status.pending.message": "KYC 검증이 진행 중입니다. 관리자 검토를 기다리고 있습니다.",
+  "status.approved.name": "승인됨",
+  "status.approved.message": "KYC 검증이 승인되었습니다.",
+  "status.rejected.name": "거부됨",
+  "status.rejected.message": "KYC 검증이 거부되었습니다. 사유: {reason}",
+  "status.expired.name": "만료됨",
+  "status.expired.message": "KYC 검증이 만료되었습니다. 다시 제출해주세요."
+} 

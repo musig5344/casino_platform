@@ -1,0 +1,14 @@
+2025-04-19 22:46:26,176 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/
+2025-04-19 22:46:31,837 - INFO - 명령 실행 완료 (소요 시간: 5.66초)
+2025-04-19 22:46:39,170 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/test_wallet.py tests/test_baccarat.py tests/test_load.py
+2025-04-19 22:46:46,197 - INFO - 명령 실행 완료 (소요 시간: 7.03초)
+2025-04-19 22:46:50,321 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/test_wallet.py tests/test_baccarat.py tests/test_load.py
+2025-04-19 22:46:57,503 - INFO - 명령 실행 완료 (소요 시간: 7.18초)
+2025-04-19 23:02:23,471 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/
+2025-04-19 23:02:26,780 - INFO - 명령 실행 완료 (소요 시간: 3.31초)
+2025-04-19 23:07:13,558 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/test_baccarat.py
+2025-04-19 23:07:16,578 - INFO - 명령 실행 완료 (소요 시간: 3.02초)
+2025-04-19 23:07:43,993 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/test_baccarat.py
+2025-04-19 23:07:44,654 - INFO - 명령 실행 완료 (소요 시간: 0.66초)
+2025-04-19 23:08:00,215 - INFO - 실행: C:\Users\jangw\AppData\Local\Programs\Python\Python310\python.exe -m pytest tests/test_baccarat.py
+2025-04-19 23:08:04,110 - INFO - 명령 실행 완료 (소요 시간: 3.89초)

@@ -1,0 +1,40 @@
+2025-04-19 22:46:27,332 - INFO - Memurai 클라이언트가 초기화되었습니다. URL: redis://localhost:6379/0
+2025-04-19 22:46:29,364 - INFO - Memurai 서버에 성공적으로 연결되었습니다.
+2025-04-19 22:46:31,459 - INFO - Redis/Memurai 연결 성공
+2025-04-19 22:46:44,046 - INFO - 인증 토큰 획득 실행 시간: 4.096초
+2025-04-19 22:46:44,046 - ERROR - 인증 토큰 획득 실패: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /ua/v1/MY_CASINO/qwqw6171 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x000001E70B65E980>: Failed to establish a new connection: [WinError 10061] 대상 컴퓨터에서 연결을 거부했으므로 연결하지 못했습니다'))
+2025-04-19 22:46:55,190 - INFO - 인증 토큰 획득 실행 시간: 4.074초
+2025-04-19 22:46:55,191 - ERROR - 인증 토큰 획득 실패: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /ua/v1/MY_CASINO/qwqw6171 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000029EE1572980>: Failed to establish a new connection: [WinError 10061] 대상 컴퓨터에서 연결을 거부했으므로 연결하지 못했습니다'))
+2025-04-19 22:52:52,256 - INFO - 인증 토큰 획득 실행 시간: 4.082초
+2025-04-19 22:52:52,257 - ERROR - 인증 토큰 획득 실패: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /ua/v1/MY_CASINO/qwqw6171 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021696276920>: Failed to establish a new connection: [WinError 10061] 대상 컴퓨터에서 연결을 거부했으므로 연결하지 못했습니다'))
+2025-04-19 23:02:20,232 - INFO - 인증 토큰 획득 실행 시간: 2.051초
+2025-04-19 23:02:20,232 - INFO - 동적 토큰 획득 성공: test_token...
+2025-04-19 23:02:20,398 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:20,403 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:20,408 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:20,413 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:20,420 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:20,425 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:20,432 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:02:26,624 - INFO - Redis/Memurai 연결 성공
+2025-04-19 23:07:10,516 - INFO - 인증 토큰 획득 실행 시간: 2.048초
+2025-04-19 23:07:10,517 - INFO - 동적 토큰 획득 성공: test_token...
+2025-04-19 23:07:10,676 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:10,682 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:10,688 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:10,694 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:10,701 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:16,300 - INFO - 인증 토큰 획득 실행 시간: 2.052초
+2025-04-19 23:07:16,300 - INFO - 동적 토큰 획득 성공: test_token...
+2025-04-19 23:07:16,468 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:16,474 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:16,479 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:16,484 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:07:16,490 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:08:03,831 - INFO - 인증 토큰 획득 실행 시간: 2.052초
+2025-04-19 23:08:03,831 - INFO - 동적 토큰 획득 성공: test_token...
+2025-04-19 23:08:04,002 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:08:04,008 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:08:04,011 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:08:04,016 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'
+2025-04-19 23:08:04,022 - WARNING - 백엔드 앱 가져오기 실패: No module named 'pydantic._internal'

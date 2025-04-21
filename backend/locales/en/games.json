@@ -1,0 +1,8 @@
+{
+  "game.baccarat.name": "Baccarat",
+  "game.baccarat.description": "Classic Baccarat Game",
+  "game.blackjack.name": "Blackjack",
+  "game.blackjack.description": "Card game aiming for 21",
+  "game.roulette.name": "Roulette",
+  "game.roulette.description": "European roulette wheel game"
+} 
